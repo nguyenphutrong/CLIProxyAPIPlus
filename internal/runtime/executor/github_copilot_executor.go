@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -454,9 +455,32 @@ func detectVisionContent(body []byte) bool {
 	return false
 }
 
-// normalizeModel is a no-op as GitHub Copilot accepts model names directly.
-// Model mapping should be done at the registry level if needed.
+// normalizeModel strips the copilot- prefix from the model name before sending to upstream.
+// This allows the registry to use prefixed names while the upstream API receives raw names.
 func (e *GitHubCopilotExecutor) normalizeModel(_ string, body []byte) []byte {
+	prefixesToStrip := []string{"copilot-", "copilot/"}
+	
+	currentModel := gjson.GetBytes(body, "model").String()
+	if currentModel == "" {
+		return body
+	}
+	
+	normalizedModel := currentModel
+	for _, prefix := range prefixesToStrip {
+		if strings.HasPrefix(strings.ToLower(currentModel), prefix) {
+			normalizedModel = currentModel[len(prefix):]
+			break
+		}
+	}
+	
+	if normalizedModel != currentModel {
+		newBody, err := sjson.SetBytes(body, "model", normalizedModel)
+		if err != nil {
+			return body
+		}
+		return newBody
+	}
+	
 	return body
 }
 
